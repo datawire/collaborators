@@ -163,15 +163,43 @@ query($reponame: String!) {
 	}
 	ret := map[string]string{}
 	for _, userInfo := range rawRepo.Organization.Repository.Collaborators.Edges {
+		isOrgOwner := false
+		skippedSources := make(map[string]bool)
 		for _, source := range userInfo.PermissionSources {
+			var key string
 			switch {
 			case source.Source.Org != "":
-				ret["org:"+source.Source.Org] = source.Permission
+				key = "org:"+source.Source.Org
 			case source.Source.Team != "":
-				ret["team:"+teamFullnames[source.Source.Team]] = source.Permission
+				key = "team:"+teamFullnames[source.Source.Team]
 			case source.Source.Repo != "":
-				ret["user:"+userInfo.Node.Login] = source.Permission
+				key = "user:"+userInfo.Node.Login
 			}
+			if key == "org:datawire" {
+				if source.Permission == "ADMIN" {
+					isOrgOwner = true
+				}
+				// Don't bother recording this in to `ret`; of course the org that a repo is in has
+				// access to that repo.
+				continue
+			}
+			if isOrgOwner && !skippedSources[key] && source.Permission == "ADMIN" {
+				// If the user is an organization owner, then the API makes it look like they also have
+				// ADMIN on each and every specific repo for a bunch of other specific reasons.  Remove
+				// this duplication.
+				skippedSources[key] = true
+				continue
+			}
+			if val, exists := ret[key]; exists && val != source.Permission {
+				if strings.HasPrefix(key, "team:") && (val == "WRITE" && source.Permission == "ADMIN") || (val == "ADMIN" && source.Permission == "WRITE") {
+					// IDK, the API sometimes spits out a duplicate "WRITE" for teams that have "ADMIN"?
+					ret[key] = "ADMIN"
+					continue
+				}
+				return nil, fmt.Errorf("mismatch for reponame=%q collaborator=%q : %q != %q",
+					reponame, key, val, source.Permission)
+			}
+			ret[key] = source.Permission
 		}
 	}
 	return ret, nil
