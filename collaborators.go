@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"text/tabwriter"
 	"net/http"
 	"os"
 	"sort"
@@ -242,6 +243,9 @@ query($cursor: String) {
 }
 
 func Main() error {
+	if os.Getenv("GH_TOKEN") == "" {
+		return fmt.Errorf("must set the GH_TOKEN environment variable to a GitHub personal access token that has the 'admin:org' permission")
+	}
 	teamFullnames, err := getTeamFullnames()
 	if err != nil {
 		return err
@@ -250,18 +254,30 @@ func Main() error {
 	if err != nil {
 		return err
 	}
+	output := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
 	for _, repo := range repos {
 		collaborators, err := getCollaborators(teamFullnames, repo.Name)
 		if err != nil {
 			return fmt.Errorf("%s: %w", repo.URL, err)
 		}
-		strs := make([]string, 0, len(collaborators))
-		for k, v := range collaborators {
-			strs = append(strs, k+"="+v)
+		bucketNames := []string{"org", "team", "user"}
+		buckets := make(map[string][]string, len(bucketNames))
+		for _, bucketName := range bucketNames {
+			for k, v := range collaborators {
+				if strings.HasPrefix(k, bucketName+":") {
+					buckets[bucketName] = append(buckets[bucketName], k+"="+v)
+				}
+			}
 		}
-		sort.Strings(strs)
-		fmt.Println(repo.URL, strings.Join(strs, " "))
+		fmt.Fprintf(output, "%s", repo.URL)
+		for _, bucketName := range bucketNames {
+			items := buckets[bucketName]
+			sort.Strings(items)
+			fmt.Fprintf(output, "\t%s", strings.Join(items, " "))
+		}
+		fmt.Fprintf(output, "\n")
 	}
+	output.Flush()
 
 	return nil
 }
