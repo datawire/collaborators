@@ -11,3 +11,6 @@ Usage:
  3. `export GH_TOKEN=that_personal_access_token`
  4. `go run ./collaborators.go`  Be patient, it won't display anything
     until it's all done; and it takes a little over 1 minute to run.
+
+The output has most-recently-modified repos at the top, and repos that
+haven't been modified in a long time at the bottom.
