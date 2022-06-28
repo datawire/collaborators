@@ -53,10 +53,10 @@ func graphql(out interface{}, query string, arguments map[string]interface{}) er
 	return json.Unmarshal(gqlresp.Data, &out)
 }
 
-func getTeamFullnames() (map[string]string, error) {
+func getTeamFullnames(orgname string) (map[string]string, error) {
 	query := `
-query($cursor: String) {
-  organization(login: "datawire") {
+query($orgname: String!, $cursor: String) {
+  organization(login: $orgname) {
     teams(first: 100, after: $cursor) {
       pageInfo {
         hasNextPage
@@ -87,7 +87,9 @@ query($cursor: String) {
 			}
 		}
 	}
-	args := map[string]interface{}{}
+	args := map[string]interface{}{
+		"orgname": orgname,
+	}
 	var teamSlugs []string
 	teamParents := make(map[string]string)
 	for args["cursor"] == nil || rawTeams.Organization.Teams.PageInfo.HasNextPage {
@@ -122,7 +124,7 @@ query($cursor: String) {
 	return teamFullnames, nil
 }
 
-func getCollaborators(teamFullnames map[string]string, reponame string) (map[string]string, error) {
+func getCollaborators(teamFullnames map[string]string, orgname, reponame string) (map[string]string, error) {
 	var rawRepo struct {
 		Organization struct {
 			Repository struct {
@@ -226,10 +228,10 @@ type RepoHandle struct {
 	URL  string
 }
 
-func getRepos() ([]RepoHandle, error) {
+func getRepos(orgname string) ([]RepoHandle, error) {
 	query := `					
-query($cursor: String) {
-  organization(login: "datawire") {
+query($orgname: String!, $cursor: String) {
+  organization(login: $orgname) {
     repositories(first: 100, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo {
         hasNextPage
@@ -258,7 +260,9 @@ query($cursor: String) {
 			}
 		}
 	}
-	args := map[string]interface{}{}
+	args := map[string]interface{}{
+		"orgname": orgname,
+	}
 	var repos []RepoHandle
 	for args["cursor"] == nil || rawRepos.Organization.Repositories.PageInfo.HasNextPage {
 		err := graphql(&rawRepos, query, args)
@@ -277,21 +281,21 @@ query($cursor: String) {
 	return repos, nil
 }
 
-func Main() error {
+func Main(orgname string) error {
 	if os.Getenv("GH_TOKEN") == "" {
 		return fmt.Errorf("must set the GH_TOKEN environment variable to a GitHub personal access token that has the 'admin:org' permission")
 	}
-	teamFullnames, err := getTeamFullnames()
+	teamFullnames, err := getTeamFullnames(orgname)
 	if err != nil {
 		return err
 	}
-	repos, err := getRepos()
+	repos, err := getRepos(orgname)
 	if err != nil {
 		return err
 	}
 	output := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
 	for _, repo := range repos {
-		collaborators, err := getCollaborators(teamFullnames, repo.Name)
+		collaborators, err := getCollaborators(teamFullnames, orgname, repo.Name)
 		if err != nil {
 			return fmt.Errorf("%s: %w", repo.URL, err)
 		}
@@ -318,7 +322,11 @@ func Main() error {
 }
 
 func main() {
-	if err := Main(); err != nil {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "Usage: %s orgname\n", os.Args[0])
+		os.Exit(2)
+	}
+	if err := Main(os.Args[1]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
