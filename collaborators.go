@@ -54,9 +54,30 @@ func graphql(out interface{}, query string, arguments map[string]interface{}) er
 }
 
 func getTeamFullnames() (map[string]string, error) {
+	query := `
+query($cursor: String) {
+  organization(login: "datawire") {
+    teams(first: 100, after: $cursor) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        slug
+        parentTeam {
+          slug
+        }
+      }
+    }
+  }
+}`
 	var rawTeams struct {
 		Organization struct {
 			Teams struct {
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
 				Nodes []struct {
 					Slug       string
 					ParentTeam *struct {
@@ -66,33 +87,28 @@ func getTeamFullnames() (map[string]string, error) {
 			}
 		}
 	}
-	err := graphql(&rawTeams, `
-query {
-  organization(login: "datawire") {
-    teams(first: 100) {
-      nodes {
-        slug
-        parentTeam {
-          slug
-        }
-      }
-    }
-  }
-}
-`, nil)
-	if err != nil {
-		return nil, err
-	}
+	args := map[string]interface{}{}
+	var teamSlugs []string
 	teamParents := make(map[string]string)
-	for _, teamInfo := range rawTeams.Organization.Teams.Nodes {
-		if teamInfo.ParentTeam != nil {
-			teamParents[teamInfo.Slug] = teamInfo.ParentTeam.Slug
+	for args["cursor"] == nil || rawTeams.Organization.Teams.PageInfo.HasNextPage {
+		err := graphql(&rawTeams, query, args)
+		if err != nil {
+			return nil, err
+		}
+		args["cursor"] = rawTeams.Organization.Teams.PageInfo.EndCursor
+
+		for _, teamInfo := range rawTeams.Organization.Teams.Nodes {
+			teamSlugs = append(teamSlugs, teamInfo.Slug)
+			if teamInfo.ParentTeam != nil {
+				teamParents[teamInfo.Slug] = teamInfo.ParentTeam.Slug
+			}
 		}
 	}
-	teamFullnames := make(map[string]string, len(rawTeams.Organization.Teams.Nodes))
-	for _, teamInfo := range rawTeams.Organization.Teams.Nodes {
-		full := teamInfo.Slug
-		tip := teamInfo.Slug
+
+	teamFullnames := make(map[string]string, len(teamSlugs))
+	for _, teamSlug := range teamSlugs {
+		full := teamSlug
+		tip := teamSlug
 		for tip != "" {
 			parent := teamParents[tip]
 			if parent != "" {
@@ -100,7 +116,7 @@ query {
 			}
 			tip = parent
 		}
-		teamFullnames[teamInfo.Slug] = full
+		teamFullnames[teamSlug] = full
 	}
 
 	return teamFullnames, nil
@@ -242,24 +258,15 @@ query($cursor: String) {
 			}
 		}
 	}
-	err := graphql(&rawRepos, query, nil)
-	if err != nil {
-		return nil, err
-	}
+	args := map[string]interface{}{}
 	var repos []RepoHandle
-	for _, repoInfo := range rawRepos.Organization.Repositories.Nodes {
-		if repoInfo.IsArchived {
-			continue
-		}
-		repos = append(repos, RepoHandle{Name: repoInfo.Name, URL: repoInfo.URL})
-	}
-	for rawRepos.Organization.Repositories.PageInfo.HasNextPage {
-		err := graphql(&rawRepos, query, map[string]interface{}{
-			"cursor": rawRepos.Organization.Repositories.PageInfo.EndCursor,
-		})
+	for args["cursor"] == nil || rawRepos.Organization.Repositories.PageInfo.HasNextPage {
+		err := graphql(&rawRepos, query, args)
 		if err != nil {
 			return nil, err
 		}
+		args["cursor"] = rawRepos.Organization.Repositories.PageInfo.EndCursor
+
 		for _, repoInfo := range rawRepos.Organization.Repositories.Nodes {
 			if repoInfo.IsArchived {
 				continue
