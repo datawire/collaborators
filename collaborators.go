@@ -147,8 +147,8 @@ func getCollaborators(teamFullnames map[string]string, orgname, reponame string)
 		}
 	}
 	err := graphql(&rawRepo, `
-query($reponame: String!) {
-  organization(login: "datawire") {
+query($orgname: String!, $reponame: String!) {
+  organization(login: $orgname) {
     repository(name: $reponame) {
       collaborators {
         edges {
@@ -174,6 +174,7 @@ query($reponame: String!) {
     }
   }
 }`, map[string]interface{}{
+		"orgname":  orgname,
 		"reponame": reponame,
 	})
 	if err != nil {
@@ -193,7 +194,7 @@ query($reponame: String!) {
 			case source.Source.Repo != "":
 				key = "user:" + userInfo.Node.Login
 			}
-			if key == "org:datawire" {
+			if key == "org:"+orgname {
 				if source.Permission == "ADMIN" {
 					isOrgOwner = true
 				}
