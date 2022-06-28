@@ -53,6 +53,42 @@ func graphql(out interface{}, query string, arguments map[string]interface{}) er
 	return json.Unmarshal(gqlresp.Data, &out)
 }
 
+type Permission int
+
+const (
+	PermNONE = iota
+	PermREAD
+	PermWRITE
+	PermADMIN
+)
+
+func (p *Permission) UnmarshalText(text []byte) error {
+	val, ok := map[string]Permission{
+		"NONE":  PermNONE,
+		"READ":  PermREAD,
+		"WRITE": PermWRITE,
+		"ADMIN": PermADMIN,
+	}[string(text)]
+	if !ok {
+		return fmt.Errorf("invalid permission enum string: %q", text)
+	}
+	*p = val
+	return nil
+}
+
+func (p Permission) String() string {
+	val, ok := map[Permission]string{
+		PermNONE:  "NONE",
+		PermREAD:  "READ",
+		PermWRITE: "WRITE",
+		PermADMIN: "ADMIN",
+	}[p]
+	if !ok {
+		return fmt.Sprintf("Permission(%d)", p)
+	}
+	return val
+}
+
 func getTeamFullnames(orgname string) (map[string]string, error) {
 	query := `
 query($orgname: String!, $cursor: String) {
@@ -124,7 +160,7 @@ query($orgname: String!, $cursor: String) {
 	return teamFullnames, nil
 }
 
-func getCollaborators(teamFullnames map[string]string, orgname, reponame string) (map[string]string, error) {
+func getCollaborators(teamFullnames map[string]string, orgname, reponame string) (map[string]Permission, error) {
 	var rawRepo struct {
 		Organization struct {
 			Repository struct {
@@ -134,7 +170,7 @@ func getCollaborators(teamFullnames map[string]string, orgname, reponame string)
 							Login string
 						}
 						PermissionSources []struct {
-							Permission string
+							Permission Permission
 							Source     struct {
 								Org  string
 								Repo string
@@ -180,7 +216,7 @@ query($orgname: String!, $reponame: String!) {
 	if err != nil {
 		return nil, err
 	}
-	ret := map[string]string{}
+	ret := map[string]Permission{}
 	for _, userInfo := range rawRepo.Organization.Repository.Collaborators.Edges {
 		isOrgOwner := false
 		skippedSources := make(map[string]bool)
@@ -195,14 +231,14 @@ query($orgname: String!, $reponame: String!) {
 				key = "user:" + userInfo.Node.Login
 			}
 			if key == "org:"+orgname {
-				if source.Permission == "ADMIN" {
+				if source.Permission == PermADMIN {
 					isOrgOwner = true
 				}
 				// Don't bother recording this in to `ret`; of course the org that a repo is in has
 				// access to that repo.
 				continue
 			}
-			if isOrgOwner && !skippedSources[key] && source.Permission == "ADMIN" {
+			if isOrgOwner && !skippedSources[key] && source.Permission == PermADMIN {
 				// If the user is an organization owner, then the API makes it look like they also have
 				// ADMIN on each and every specific repo for a bunch of other specific reasons.  Remove
 				// this duplication.
@@ -210,9 +246,9 @@ query($orgname: String!, $reponame: String!) {
 				continue
 			}
 			if val, exists := ret[key]; exists && val != source.Permission {
-				if strings.HasPrefix(key, "team:") && (val == "WRITE" && source.Permission == "ADMIN") || (val == "ADMIN" && source.Permission == "WRITE") {
+				if strings.HasPrefix(key, "team:") && (val == PermWRITE && source.Permission == PermADMIN) || (val == PermADMIN && source.Permission == PermWRITE) {
 					// IDK, the API sometimes spits out a duplicate "WRITE" for teams that have "ADMIN"?
-					ret[key] = "ADMIN"
+					ret[key] = PermADMIN
 					continue
 				}
 				return nil, fmt.Errorf("mismatch for reponame=%q collaborator=%q : %q != %q",
@@ -306,7 +342,7 @@ func Main(orgname string) error {
 		for _, bucketName := range bucketNames {
 			for k, v := range collaborators {
 				if strings.HasPrefix(k, bucketName+":") {
-					buckets[bucketName] = append(buckets[bucketName], k+"="+v)
+					buckets[bucketName] = append(buckets[bucketName], k+"="+v.String())
 				}
 			}
 		}
