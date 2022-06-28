@@ -89,6 +89,9 @@ func (p Permission) String() string {
 	return val
 }
 
+// getTeamFullnames returns a listing of all teams within an
+// organization, represented as map of
+// "slug"=>"parentteam/subteam/subteam".
 func getTeamFullnames(orgname string) (map[string]string, error) {
 	query := `
 query($orgname: String!, $cursor: String) {
@@ -216,6 +219,11 @@ query($orgname: String!, $reponame: String!) {
 	if err != nil {
 		return nil, err
 	}
+	// That query will give us a listing of *every single user*
+	// who has access, along with why each of them have access.
+	// We need to agregate that from "these 15 users all have
+	// access because they are on team Foo" to just "team Foo has
+	// access".
 	ret := map[string]Permission{}
 	for _, userInfo := range rawRepo.Organization.Repository.Collaborators.Edges {
 		isOrgOwner := false
@@ -245,18 +253,30 @@ query($orgname: String!, $reponame: String!) {
 				skippedSources[key] = true
 				continue
 			}
-			if val, exists := ret[key]; exists && val != source.Permission {
-				if strings.HasPrefix(key, "team:") && (val == PermWRITE && source.Permission == PermADMIN) || (val == PermADMIN && source.Permission == PermWRITE) {
-					// IDK, the API sometimes spits out a duplicate "WRITE" for teams that have "ADMIN"?
-					ret[key] = PermADMIN
+			if oldVal, exists := ret[key]; exists && oldVal != source.Permission {
+				// This can happen for nested groups.  If team:company has "READ", and team:company/dev
+				// has "WRITE", and Bob is in team:company/dev but not team:company, then Bob will have
+				// both "READ" and "WRITE" because of his membership in team:company/dev; the API will
+				// give no indication that the "READ" indirectly came from team:company.
+				if oldVal > source.Permission {
 					continue
 				}
-				return nil, fmt.Errorf("mismatch for reponame=%q collaborator=%q : %q != %q",
-					reponame, key, val, source.Permission)
 			}
 			ret[key] = source.Permission
 		}
 	}
+
+	// Prune redundant child teams; see above about team:company permissions getting attributed to team:company/dev.
+	for parentKey := range ret {
+		if strings.HasPrefix(parentKey, "team:") {
+			for childKey := range ret {
+				if strings.HasPrefix(childKey, parentKey+"/") && ret[childKey] == ret[parentKey] {
+					delete(ret, childKey)
+				}
+			}
+		}
+	}
+
 	return ret, nil
 }
 
