@@ -134,7 +134,7 @@ query($orgname: String!, $cursor: String) {
 	for args["cursor"] == nil || rawTeams.Organization.Teams.PageInfo.HasNextPage {
 		err := graphql(&rawTeams, query, args)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("getTeamFullnames: %w", err)
 		}
 		args["cursor"] = rawTeams.Organization.Teams.PageInfo.EndCursor
 
@@ -217,7 +217,7 @@ query($orgname: String!, $reponame: String!) {
 		"reponame": reponame,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getCollaborators: %q: %w", reponame, err)
 	}
 	// That query will give us a listing of *every single user*
 	// who has access, along with why each of them have access.
@@ -324,7 +324,7 @@ query($orgname: String!, $cursor: String) {
 	for args["cursor"] == nil || rawRepos.Organization.Repositories.PageInfo.HasNextPage {
 		err := graphql(&rawRepos, query, args)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("getRepos: %w", err)
 		}
 		args["cursor"] = rawRepos.Organization.Repositories.PageInfo.EndCursor
 
@@ -351,6 +351,8 @@ func Main(orgname string) error {
 		return err
 	}
 	output := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
+	fmt.Fprintf(output, "Repository URL\t| Organizations\t| Teams\t| Individuals\n")
+	fmt.Fprintf(output, "--------------\t| -------------\t| -----\t| -----------\n")
 	for i, repo := range repos {
 		fmt.Fprintf(os.Stderr, "inspecting repo %d/%d %q\n", i, len(repos), repo.Name)
 		collaborators, err := getCollaborators(teamFullnames, orgname, repo.Name)
@@ -362,7 +364,9 @@ func Main(orgname string) error {
 		for _, bucketName := range bucketNames {
 			for k, v := range collaborators {
 				if strings.HasPrefix(k, bucketName+":") {
-					buckets[bucketName] = append(buckets[bucketName], k+"="+v.String())
+					buckets[bucketName] = append(buckets[bucketName], fmt.Sprintf("%s=%s",
+						strings.TrimPrefix(k, bucketName+":"),
+						v))
 				}
 			}
 		}
@@ -370,7 +374,7 @@ func Main(orgname string) error {
 		for _, bucketName := range bucketNames {
 			items := buckets[bucketName]
 			sort.Strings(items)
-			fmt.Fprintf(output, "\t%s", strings.Join(items, " "))
+			fmt.Fprintf(output, "\t| %s", strings.Join(items, " "))
 		}
 		fmt.Fprintf(output, "\n")
 	}
