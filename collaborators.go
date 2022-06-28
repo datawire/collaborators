@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"text/tabwriter"
 	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
 )
 
 type graphqlRequest struct {
@@ -169,11 +169,11 @@ query($reponame: String!) {
 			var key string
 			switch {
 			case source.Source.Org != "":
-				key = "org:"+source.Source.Org
+				key = "org:" + source.Source.Org
 			case source.Source.Team != "":
-				key = "team:"+teamFullnames[source.Source.Team]
+				key = "team:" + teamFullnames[source.Source.Team]
 			case source.Source.Repo != "":
-				key = "user:"+userInfo.Node.Login
+				key = "user:" + userInfo.Node.Login
 			}
 			if key == "org:datawire" {
 				if source.Permission == "ADMIN" {
