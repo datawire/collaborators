@@ -10,9 +10,9 @@ Usage:
     Access Token that has the `admin:org` and the `repo`(?)
     permission.
  3. `export GH_TOKEN=that_personal_access_token`
- 4. `go run ./collaborators.go ORGNAME` Be patient, it won't display
-    anything until it's all done; and it takes a little over 1 minute
-    to run.
+ 4. `go run ./collaborators.go ORGNAME` Progress gets printed to
+    stderr, actual output gets printed to stdout.  Be patient, it
+    takes a couple minutes to run.
 
 The output has most-recently-modified repos at the top, and repos that
 haven't been modified in a long time at the bottom.

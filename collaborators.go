@@ -294,7 +294,8 @@ func Main(orgname string) error {
 		return err
 	}
 	output := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	for _, repo := range repos {
+	for i, repo := range repos {
+		fmt.Fprintf(os.Stderr, "inspecting repo %d/%d %q\n", i, len(repos), repo.Name)
 		collaborators, err := getCollaborators(teamFullnames, orgname, repo.Name)
 		if err != nil {
 			return fmt.Errorf("%s: %w", repo.URL, err)
